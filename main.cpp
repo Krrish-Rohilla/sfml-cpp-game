@@ -1,24 +1,35 @@
 #include <SFML/Graphics.hpp>
-
+#include <iostream>
 int main() {
-    // SFML 3 uses sf::Vector2u for dimensions instead of separate numbers
-    sf::RenderWindow window(sf::VideoMode({800, 600}), "My First SFML Game!");
+    // Defining the Screen Resolution
+    sf::VideoMode mymode ({800,600});
+    // Defining the Title on Title Bar
+    const std::string title = "Welcome to SFML world";
+    //Defining and Close and Resize Buttons
+    std::uint32_t style = sf::Style::Close;
+    // Floating Window or FullScreen State
+    sf::State state = sf::State::Windowed;
+    // Fining the Window Borders
+    sf::ContextSettings settings;
+    settings.antiAliasingLevel = 8;
 
-    // Main Game Loop
-    while (window.isOpen()) {
-        // SFML 3 event handling uses std::optional
-        while (const std::optional event = window.pollEvent()) {
-            // Check if the window close button was clicked
-            if (event->is<sf::Event::Closed>()) {
-                window.close();
+    // Creating the Window
+    sf::RenderWindow window(mymode, title, style, state, settings);
+
+    // Keeping Frame Rate 60fps
+    window.setFramerateLimit(60);
+
+    while(window.isOpen()){
+
+        // Traking inputs from the User
+        while (std::optional event = window.pollEvent())
+        {
+            if (event->is<sf::Event::Closed>()){
+                window.close(); // This closes the window
             }
         }
-
-        // Clear the screen with a black color
-        window.clear(sf::Color::Black);
-
-        // Display whatever was drawn
-        window.display();
+        window.clear(sf::Color(30,5,10)); // Setting the Background Colour
+        window.display();                //Updating the Display
     }
 
     return 0;
