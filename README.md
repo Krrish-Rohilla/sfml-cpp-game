@@ -1,8 +1,7 @@
 # sfml-cpp-game
-# sfml-cpp-game
 # 2D Physics Simulation in C++
 
-<video src="Day_3.mp4" width="100%" autoplay loop muted></video>
+![Physics Simulation](Day_3.mp4)
 
 A lightweight, from-scratch 2D physics sandbox built using C++ and the SFML graphics library. 
 
