@@ -1,22 +1,34 @@
-# sfml-cpp-game
-# 2D Physics Simulation in C++
+# Skateboard Physics Engine 🛹
 
-https://github.com/user-attachments/assets/4b66e491-d542-4636-9a8a-4ea82ca46af0
+A lightweight, high-performance 2D physics simulation built from scratch to model custom skateboarding physics, mechanics, and object interactions.
 
-A lightweight, from-scratch 2D physics sandbox built using C++ and the SFML graphics library. 
+## 🛠️ Tech Stack & Architecture
+* **Language Standard:** C++26 (Bleeding-edge ISO standard features)
+* **Graphics Library:** SFML 3 (Modernized event loops & native rendering)
+* **Build System:** CMake 3.28+ (Cross-platform portability)
+* **Architecture:** Modular, decoupled class system (`Engine` and `Ball` components)
 
-This project focuses on translating pure physics equations into discrete computer logic without relying on pre-built game engines.
+---
 
-## 🛠️ Current Features (Day 3 Status)
-* **Semi-Implicit Euler Integration:** Real-time gravitational acceleration calculations.
-* **Kinetic Energy Loss:** Symmetrical boundary collision handler utilizing a coefficient of restitution (`e`).
-* **Ground Friction:** Velocity dampening that smoothly brings objects to a dead stop when rolling.
+## 📈 Dev Log & Progression
 
-## 🚀 Upcoming Features / To-Do List
-- [ ] Fix collision loop calculation sequence for perfect edge-case stability.
-- [ ] Implement left and right wall collision boundaries.
-- [ ] Add user keyboard inputs (e.g., Spacebar to apply an upward impulse/jump force).
+### Day 4: Architectural Refactoring & Build Management
+* **Modularized the Codebase:** Completely split a monolithic `main.cpp` into isolated, scalable header (`.hpp`) and source (`.cpp`) modules.
+* **Implemented CMake:** Dropped localized editor tasks to establish a standard `CMakeLists.txt` build pipeline, rendering the project universally buildable.
+* **Upgraded to C++26:** Enforced modern development paradigms, utilizing clean explicit casting and `std::optional` event pipelines.
 
-## 📦 How to Build
-* Requires **SFML 3.0+** and a C++20 compatible compiler.
-* Clone the repo and link SFML graphics/window/system modules.
+### Day 3: Custom Physics Implementation
+* Engineered a flawless look-ahead state split collision algorithm to eliminate ground-clipping issues.
+* Hand-coded velocity dampening for linear kinetic friction and gravitational acceleration vectors.
+
+---
+
+## 🚀 Repository Structure
+```text
+sfml-cpp-game/
+├── CMakeLists.txt        # Universal build configuration
+├── README.md             # Project documentation
+└── src/
+    ├── main.cpp          # Application entry point
+    ├── Engine.hpp/.cpp   # Central game loop management & scene setup
+    └── Ball.hpp/.cpp     # Custom physics bodies & collision bounds
