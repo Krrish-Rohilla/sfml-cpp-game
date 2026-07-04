@@ -6,11 +6,18 @@ A lightweight, high-performance 2D physics simulation built from scratch to mode
 * **Language Standard:** C++26 (Bleeding-edge ISO standard features)
 * **Graphics Library:** SFML 3 (Modernized event loops & native rendering)
 * **Build System:** CMake 3.28+ (Cross-platform portability)
+* **Compiler & Environment:** GCC (UCRT64 via MSYS2)
+* **Debugging Tools:** GDB (GNU Debugger) natively integrated
 * **Architecture:** Modular, decoupled class system (`Engine` and `Ball` components)
 
 ---
 
 ## 📈 Dev Log & Progression
+
+### Day 5: Environment Complete & Debugger Integration
+* **Native Debugging Suite:** Integrated GDB (GNU Debugger) via MSYS2 (UCRT64) cleanly into the VS Code runtime environment for precise vector tracing and stack monitoring.
+* **SFML 3 Migration Handling:** Resolved window creation api breaking changes between version branches by migrating to the explicit `sf::State` initialization format.
+* **Multi-Threaded Parallel Compilation:** Confirmed a 100% zero-error executable target link across 16 logic threads natively.
 
 ### Day 4: Architectural Refactoring & Build Management
 * **Modularized the Codebase:** Completely split a monolithic `main.cpp` into isolated, scalable header (`.hpp`) and source (`.cpp`) modules.
@@ -26,9 +33,9 @@ A lightweight, high-performance 2D physics simulation built from scratch to mode
 ## 🚀 Repository Structure
 ```text
 sfml-cpp-game/
-├── CMakeLists.txt        # Universal build configuration
-├── README.md             # Project documentation
+├── CMakeLists.txt         # Universal build configuration
+├── README.md              # Project documentation
 └── src/
-    ├── main.cpp          # Application entry point
-    ├── Engine.hpp/.cpp   # Central game loop management & scene setup
-    └── Ball.hpp/.cpp     # Custom physics bodies & collision bounds
+    ├── main.cpp           # Application entry point
+    ├── Engine.hpp/.cpp    # Central game loop management & scene setup
+    └── Ball.hpp/.cpp      # Custom physics bodies & collision bounds
