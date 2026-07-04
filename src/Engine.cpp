@@ -6,7 +6,8 @@ Engine::Engine() : w(800), h(600), gravity(0.4f), e(0.5f), friction(0.01f) {
     settings.antiAliasingLevel = 8;
     
     // Native SFML 3 setup
-    window.create(mymode, "Skateboard Physics Engine", sf::Style::Close, settings);
+    // FIX for SFML 3: Added sf::State::Windowed right before settings
+    window.create(mymode, "Skateboard Physics Engine", sf::Style::Close, sf::State::Windowed, settings);
     window.setFramerateLimit(60);
 
     // Initializing test vector assets 

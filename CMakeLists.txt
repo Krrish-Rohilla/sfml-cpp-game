@@ -1,19 +1,16 @@
-cmake_minimum_required(VERSION 3.28) # Updated minimum for full modern C++ toolchain support
-project(SkateboardPhysicsEngine VERSION 1.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.24)
+project(sfml-cpp-game LANGUAGES CXX)
 
-# Enforce C++26 standard
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF) # Ensures clean, standard code without compiler-specific hacks
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Find native SFML 3 packages
-find_package(SFML 3 REQUIRED COMPONENTS graphics window system)
+# Point to your laptop's MSYS2 SFML directory
+set(SFML_DIR "C:/msys64/ucrt64/lib/cmake/SFML")
+find_package(SFML 3 REQUIRED COMPONENTS Graphics Window System)
 
-# Gather source modules
+# FIX: Changed from GLOB_RECURSIVE to GLOB_RECURSE
 file(GLOB_RECURSE SOURCE_FILES "src/*.cpp")
 
-# Establish the engine target
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})
-
-# Link engine modules together with SFML 3
-target_link_libraries(${PROJECT_NAME} PRIVATE SFML::graphics SFML::window SFML::system)
+target_link_libraries(${PROJECT_NAME} PRIVATE SFML::Graphics SFML::Window SFML::System)
