@@ -1,12 +1,11 @@
 #include "Ball.hpp"
 #include <cmath>
 
-Ball::Ball(float start_x, float start_y, float start_vx, float start_vy, sf::Color color) noexcept {
-    x = start_x;
-    y = start_y;
-    vx = start_vx;
-    vy = start_vy;
-    shape.setRadius(50.f);
+Ball::Ball(sf::Vector2f start, sf::Vector2f vel, sf::Color color, float r) noexcept {
+    x = start.x;    y = start.y;
+    vx = vel.x;     vy = vel.y;
+    radius = r;
+    shape.setRadius(radius);
     shape.setFillColor(color);
 }
 
@@ -15,14 +14,14 @@ void Ball::updatePhysics(unsigned int h, float gravity, float friction, float e)
     y += vy;
     
     // Look-ahead state split physics logic
-    if (y + vy >= (static_cast<float>(h) - 100.f)) {
+    if (y + vy >= (static_cast<float>(h) - radius * 2)) {
         vy *= -e;
         vx *= 1.f - friction;
 
-        if (std::abs(vx) < 0.00001f) vx = 0.f;
-        if (std::abs(vy) < 0.00001f) {
+        if (std::abs(vx) < 0.01f) vx = 0.f;
+        if (std::abs(vy) < 0.01f) {
             vy = 0.f;
-            y = static_cast<float>(h) - 100.f;
+            y = static_cast<float>(h) - radius * 2;
         }
     }
     else {

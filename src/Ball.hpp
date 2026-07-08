@@ -6,9 +6,10 @@ private:
     sf::CircleShape shape;
     float x, y;
     float vx, vy;
+    float radius;
 
 public:
-    Ball(float start_x, float start_y, float start_vx, float start_vy, sf::Color color) noexcept;
+    Ball(sf::Vector2f start, sf::Vector2f vel, sf::Color color, float r) noexcept;
 
     void updatePhysics(unsigned int h, float gravity, float friction, float e) noexcept;
     void draw(sf::RenderWindow& window) noexcept;

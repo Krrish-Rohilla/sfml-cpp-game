@@ -9,7 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(SFML_DIR "C:/msys64/ucrt64/lib/cmake/SFML")
 find_package(SFML 3 REQUIRED COMPONENTS Graphics Window System)
 
-# FIX: Changed from GLOB_RECURSIVE to GLOB_RECURSE
+# GLOB_RECURSE
 file(GLOB_RECURSE SOURCE_FILES "src/*.cpp")
 
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})

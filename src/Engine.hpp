@@ -2,6 +2,8 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include "Ball.hpp"
+#include "Line.hpp"
+#include "MapGenerator.hpp"
 
 class Engine {
 private:
@@ -13,6 +15,7 @@ private:
     float friction;
 
     std::vector<Ball> balls;
+    std::vector<Line> lines;
 
     void processEvents() noexcept;
     void update() noexcept;
