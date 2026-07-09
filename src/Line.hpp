@@ -11,21 +11,34 @@ private:
     // using normal vector here to make calculations simple
     sf::Vector2f Normal;
 
-    // defining a container of points
-    sf::VertexArray va;
-
     float thickness;
+
+    sf::Color color;
+
+    bool collisionFree; // NEW: Flag to skip physical interaction
 
 public:
     // constructor using start point and end point of line
-    Line(sf::Vector2f a, sf::Vector2f b, sf::Color color, float thick) noexcept;
+    Line(sf::Vector2f a, 
+         sf::Vector2f b, 
+         sf::Color color = sf::Color::White, 
+         float thickness = 10.f) noexcept;
 
-    void draw(sf::RenderWindow& window) noexcept;
 
-    sf::Vector2f getA() {return pointA;}
+    // Fast inline getters for our future physics engine and batch renderer
+    sf::Vector2f getA() const noexcept { return pointA; }
+    sf::Vector2f getB() const noexcept { return pointB; }
+    sf::Vector2f getDirection() const noexcept { return Direction; }
+    sf::Vector2f getNormal() const noexcept { return Normal; }
+    float getThickness() const noexcept { return thickness; }
+    sf::Color getColor() const noexcept { return color; }
 
-    sf::Vector2f getB() {return pointB;}
+    // Setters in case you want to modify individual segments later
+    void setColor(sf::Color c) noexcept { color = c; }
+    void setThickness(float t) noexcept { thickness = t; }
 
-    sf::Vector2f getNormal() {return Normal;}
+    // NEW: Getters and setters for our upcoming spring lines
+    bool isCollisionFree() const noexcept { return collisionFree; }
+    void setCollisionFree(bool free) noexcept { collisionFree = free; }
 
 };

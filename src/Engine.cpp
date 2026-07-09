@@ -2,23 +2,22 @@
 #include <cmath>
 #include <numbers>
 
-Engine::Engine() : w(1000), h(600), gravity(0.4f), e(0.7f), friction(0.01f) {
+Engine::Engine() : w(1000), h(600), gravity(0.4f), e(1.f), groundFriction(0.f), airFriction(0.f) {
 sf::VideoMode mymode({w, h});
 sf::ContextSettings settings;
 settings.antiAliasingLevel = 8;
 
 // Native SFML 3 setup
-// FIX for SFML 3: Added sf::State::Windowed right before settings
+// SFML 3: Added sf::State::Windowed right before settings
 window.create(mymode, "Skateboard Physics Engine", sf::Style::Close, sf::State::Windowed, settings);
 window.setFramerateLimit(60);
 
 // Initializing test vector assets 
-balls.push_back(Ball({0.f, 0.f}, {2.f, 3.f}, sf::Color::Blue, 50));
-balls.push_back(Ball({200.f, 100.f}, {-1.f, 2.f}, sf::Color::Red, 20));
-balls.push_back(Ball({0.f, 100.f}, {3.f, 0.f}, sf::Color(255, 255, 0), 20));
-balls.push_back(Ball({4.f, 0.f}, {2.f, 4.f}, sf::Color::Magenta, 35));
+balls.push_back(Ball({150,30}, 50.f, sf::Color::Cyan, {0.f, 0.f}));
 
 MapGenerator::buildPark(lines);
+
+MapGenerator::bakeVisualMesh(lines, trackMesh);
 
 }
 
@@ -33,16 +32,19 @@ void Engine::processEvents() noexcept {
 
 void Engine::update() noexcept {
     for (Ball& b : balls) {
-        b.updatePhysics(h, gravity, friction, e);
+        b.updatePhysics(h, gravity, airFriction, e);
     }
+
+    // NEW: Run our line physics immediately after simple wall gravity updates!
+    PhysicsSystem::resolveCollisions(balls, lines, e, groundFriction);
 }
 
 void Engine::render() noexcept {
     window.clear(sf::Color(20, 0, 3));
 
-    for (Line& l: lines){
-        l.draw(window);
-    }
+    // NEW: Draw the entire track mesh in one single, high-speed graphics call!
+    window.draw(trackMesh);
+
     for (Ball& b : balls) {
         b.draw(window);
     }

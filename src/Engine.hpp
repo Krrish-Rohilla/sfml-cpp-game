@@ -3,6 +3,7 @@
 #include <vector>
 #include "Ball.hpp"
 #include "Line.hpp"
+#include "PhysicsSystem.hpp"
 #include "MapGenerator.hpp"
 
 class Engine {
@@ -12,10 +13,12 @@ private:
     
     float gravity;
     float e;
-    float friction;
+    float groundFriction;
+    float airFriction;
 
     std::vector<Ball> balls;
     std::vector<Line> lines;
+    sf::VertexArray trackMesh;  // NEW: Holds the single global visual track model
 
     void processEvents() noexcept;
     void update() noexcept;
