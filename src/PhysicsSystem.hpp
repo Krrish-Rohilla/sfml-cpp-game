@@ -5,11 +5,19 @@
 
 class PhysicsSystem {
 public:
-    // It loops through all balls and checks them against all line segments
+    // Global entry point to compile constraints and run the engine's LCP solver passes
     static void resolveCollisions(std::vector<Ball>& balls, const std::vector<Line>& lines, float e, float groundFriction) noexcept;
 
 private:
-    // A helper function to handle the math for one specific ball hitting one specific line.
-    // Making it static and private keeps it safely hidden inside this system's logic box.
-    static void checkBallLineCollision(Ball& ball, const Line& line, float e, float groundFriction) noexcept;
+    // Clean structural blueprint matching industry standards (e.g., Box2D / PhysX)
+    struct Contact {
+        Ball* ball;
+        const Line* line;
+        sf::Vector2f normal;
+        sf::Vector2f tangent;
+        sf::Vector2f closestPoint;
+        float normalImpulse;   // Total accumulated normal impulse over solver iterations
+        float tangentImpulse;  // Total accumulated friction impulse over solver iterations
+        float targetVelocity;  // Calculated physical bounce target velocity
+    };
 };

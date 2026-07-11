@@ -1,102 +1,197 @@
 #include "PhysicsSystem.hpp"
 #include "VectorMath.hpp"
-#include <algorithm>    // For std::clamp
+#include <algorithm> 
+#include <cmath>
+#include <vector>
 
-void PhysicsSystem::resolveCollisions(std::vector<Ball>& balls, const std::vector<Line>& lines, float e = 1.f, float groundFriction = 0.f) noexcept {
-    // Loop through every ball in the game
-    for (Ball& ball : balls) {
-        // Check that ball against every single line segment in the map
-        for (const Line& line : lines) {
+void PhysicsSystem::resolveCollisions(std::vector<Ball> &balls, const std::vector<Line> &lines, float e, float groundFriction) noexcept
+{
+    const int substeps = 8;
+    const float dt = 1.f / static_cast<float>(substeps);
+    const float gravityPerSubstep = 0.4f * dt; 
+
+    for (int step = 0; step < substeps; ++step)
+    {
+        // ─────────────────────────────────────────────────────────────────────────────
+        // SUBSTEP PASS 1: INTEGRATION
+        // ─────────────────────────────────────────────────────────────────────────────
+        for (Ball &ball : balls)
+        {
+            sf::Vector2f vel = ball.getVelocity();
+            sf::Vector2f pos = ball.getPosition();
+            float omega = ball.getAngularVelocity();
+
+            vel.y += gravityPerSubstep; 
+            pos += vel * dt;            
             
-            // NEW: If the line is marked as collision-free, completely skip it!
-            if (line.isCollisionFree()) {
-                continue;
-            }
-            checkBallLineCollision(ball, line, e, groundFriction);
-
-        }
-    }
-}
-
-void PhysicsSystem::checkBallLineCollision(Ball& ball, const Line& line, float e, float groundFriction) noexcept {
-    // 1. Grab foundational positions and directions
-    sf::Vector2f pA = line.getA();
-    sf::Vector2f pB = line.getB();
-    sf::Vector2f ballPos = ball.getPosition();
-
-    // To adapt to SFML's top-left origin drawing for sf::CircleShape,
-    // we calculate using the absolute center point of the ball
-    float ballRadius = ball.getRadius();
-    sf::Vector2f ballCenter = ballPos + sf::Vector2f(ballRadius, ballRadius);
-
-    // 2. Vector Projection Math (Finding the Closest Point)
-    sf::Vector2f lineVec = pB - pA;
-    sf::Vector2f ballToA = ballCenter - pA;
-
-    // Project ballToA onto lineVec using the Dot Product
-    float numerator = Math::dot(ballToA, lineVec);
-    float denominator = Math::lengthSq(lineVec); // Squared length is much faster!
-
-    if (denominator == 0.f) return; // Guard against an invalid line with zero length
-
-    // 't' represents the percentage slider position along the segment (0.0 to 1.0)
-    float t = numerator / denominator;
-    t = std::clamp(t, 0.f, 1.f); // Keep the point locked onto the segment bounds
-
-    // Calculate the exact closest coordinate on the track to the ball center
-    sf::Vector2f closestPoint = pA + t * lineVec;
-
-    // 3. Distance Check (Are they overlapping?)
-    sf::Vector2f collisionVec = ballCenter - closestPoint;
-    float distance = Math::length(collisionVec);
-    
-    // Total boundary distance = Ball Radius + Half of the track thickness
-    float targetDistance = ballRadius + (line.getThickness() / 2.f);
-
-    if (distance < targetDistance) {
-        // ─────────────────────────────────────────────────────────
-        // A COLLISION HAS OCCURRED!
-        // ─────────────────────────────────────────────────────────
-        
-        // Find the safe direction to push the ball away
-        sf::Vector2f collisionNormal;
-        if (distance == 0.f) {
-            // Edge case: If ball center is exactly perfectly centered on the line vector,
-            // fall back onto the precalculated surface normal of the line segment
-            collisionNormal = line.getNormal();
-        } else {
-            collisionNormal = collisionVec / distance; // Clean normalized direction
-        }
-
-        // A. POSITION RESOLUTION (Keeps ball from embedding)
-        float penetrationDepth = targetDistance - distance;
-        sf::Vector2f newCenter = ballCenter + collisionNormal * penetrationDepth;
-        ball.setPosition(newCenter - sf::Vector2f(ballRadius, ballRadius));
-
-
-        // B. VELOCITY RESOLUTION (The Bounce)
-        sf::Vector2f vel = ball.getVelocity();
-        float velAlongNormal = Math::dot(vel, collisionNormal);
-
-        // Only apply impulse if moving TOWARDS the plane surface
-        // This stops back-to-back segment checks from double-boosting energy!
-        // Only reflect if the ball is moving into the surface
-        if (velAlongNormal < 0.f) {
-            // Subtract the frame's gravity component along the normal to replicate your state split!
-            // This prevents the gravity energy leak entirely.
-            float bounceVel = -velAlongNormal * e;
-            
-            // Reconstruct velocity along the normal plane
-            vel -= velAlongNormal * collisionNormal; // Remove old incoming normal velocity
-            vel += bounceVel * collisionNormal;     // Apply perfect dampened bounce velocity
-
-            // C. SEPARATE GROUND FRICTION (Applied to the tangent sliding surface)
-            sf::Vector2f tangent = {-collisionNormal.y, collisionNormal.x};
-            float velAlongTangent = Math::dot(vel, tangent);
-            vel -= velAlongTangent * groundFriction * tangent;
+            float angle = ball.getRotationAngle() + (omega * dt);
 
             ball.setVelocity(vel);
+            ball.setPosition(pos);
+            ball.setRotationAngle(angle);
+        }
 
+        // ─────────────────────────────────────────────────────────────────────────────
+        // SUBSTEP PASS 2: NARROWPHASE WITH GHOST SEAM FILTERING
+        // ─────────────────────────────────────────────────────────────────────────────
+        struct Contact
+        {
+            Ball *ball;
+            const Line *line;
+            sf::Vector2f normal;
+            sf::Vector2f tangent;
+            float penetration;
+            float t;
+        };
+        std::vector<Contact> contactPool;
+
+        for (Ball &ball : balls)
+        {
+            sf::Vector2f ballCenter = ball.getPosition(); 
+            float radius = ball.getRadius();
+
+            struct RawOverlap
+            {
+                const Line *line;
+                sf::Vector2f normal;
+                float penetration;
+                float t;
+            };
+            std::vector<RawOverlap> rawOverlaps;
+            bool hasFaceContact = false;
+
+            for (const Line &line : lines)
+            {
+                if (line.isCollisionFree())
+                    continue;
+
+                sf::Vector2f pA = line.getA();
+                sf::Vector2f pB = line.getB();
+                sf::Vector2f lineVec = pB - pA;
+                float lenSq = Math::lengthSq(lineVec);
+                if (lenSq == 0.f)
+                    continue;
+
+                float t = Math::dot(ballCenter - pA, lineVec) / lenSq;
+                float clampedT = std::clamp(t, 0.f, 1.f); 
+                sf::Vector2f closestPoint = pA + clampedT * lineVec;
+
+                sf::Vector2f collisionVec = ballCenter - closestPoint;
+                float distance = Math::length(collisionVec);
+                float targetDistance = radius + (line.getThickness() / 2.f);
+
+                if (distance < targetDistance)
+                {
+                    sf::Vector2f normal = (distance == 0.f) ? line.getNormal() : (collisionVec / distance);
+                    float penetration = targetDistance - distance;
+
+                    rawOverlaps.push_back({&line, normal, penetration, t});
+
+                    if (t > 0.001f && t < 0.999f)
+                    {
+                        hasFaceContact = true;
+                    }
+                }
+            }
+
+            for (const auto &ro : rawOverlaps)
+            {
+                bool isVertex = (ro.t <= 0.001f || ro.t >= 0.999f);
+
+                if (isVertex && hasFaceContact)
+                {
+                    continue; 
+                }
+
+                Contact c;
+                c.ball = &ball;
+                c.line = ro.line;
+                c.normal = ro.normal;
+                c.tangent = sf::Vector2f(-ro.normal.y, ro.normal.x); 
+                c.penetration = ro.penetration;
+                c.t = ro.t;
+                contactPool.push_back(c);
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // SUBSTEP PASS 3: CONSTRAINT RESOLUTION
+        // ─────────────────────────────────────────────────────────────────────────────
+        for (int iter = 0; iter < 3; ++iter)
+        {
+            for (Contact &c : contactPool)
+            {
+                sf::Vector2f vel = c.ball->getVelocity();
+                float mass = c.ball->getMass();
+                float radius = c.ball->getRadius();
+                float omega = c.ball->getAngularVelocity();
+
+                // 1. Position Resolution (Baumgarte)
+                sf::Vector2f pos = c.ball->getPosition();
+                pos += c.normal * (c.penetration * 0.4f);
+                c.ball->setPosition(pos);
+
+                // 2. Normal Linear Bounce Solver
+                float velAlongNormal = Math::dot(vel, c.normal);
+                float normalImpulseApplied = 0.f;
+                
+                if (velAlongNormal < 0.f)
+                {
+                    float targetVel = -velAlongNormal * e;
+                    if (std::abs(velAlongNormal) < 0.2f)
+                    {
+                        targetVel = 0.f; 
+                    }
+
+                    normalImpulseApplied = (targetVel - velAlongNormal) * mass;
+                    vel += (normalImpulseApplied / mass) * c.normal;
+                }
+
+                // 3. Decoupled Continuous Surface Friction Calculation
+                float gravityPressingForce = mass * gravityPerSubstep * c.normal.y;
+                float continuousNormalImpulse = (gravityPressingForce < 0.f) ? -gravityPressingForce : 0.f;
+                float totalNormalPressure = normalImpulseApplied + continuousNormalImpulse;
+
+                float velAlongTangent = Math::dot(vel, c.tangent);
+                
+                // FIXED: Sign changed to minus (-) to properly match SFML's clockwise coordinate system.
+                float vRelTangent = velAlongTangent - (omega * radius);
+
+                float effMassTangent = mass / 3.f;
+                float frictionImpulse = -vRelTangent * effMassTangent;
+
+                float maxFriction = groundFriction * totalNormalPressure;
+                
+                // Minimum static grip threshold to allow fast spinning stationary objects to launch
+                if (maxFriction < 0.05f) 
+                {
+                    maxFriction = groundFriction * mass * 0.2f;
+                }
+
+                frictionImpulse = std::clamp(frictionImpulse, -maxFriction, maxFriction);
+
+                // Synchronize impulses into kinematic vectors
+                vel += (frictionImpulse / mass) * c.tangent;
+                
+                // FIXED: Sign changed to minus equals (-=) to properly couple the linear reaction force with torque.
+                omega -= (2.f * frictionImpulse) / (mass * radius);
+
+                // 4. Stabilized Resting Sleep Clamp
+                float linearSpeedSq = (vel.x * vel.x) + (vel.y * vel.y);
+                float rotationalSpeedSq = (omega * radius) * (omega * radius);
+
+                if (linearSpeedSq < 0.04f && rotationalSpeedSq < 0.04f) 
+                {
+                    if (c.normal.y < -0.5f) 
+                    {
+                        vel = sf::Vector2f(0.f, 0.f);
+                        omega = 0.f;
+                    }
+                }
+
+                c.ball->setAngularVelocity(omega);
+                c.ball->setVelocity(vel);
+            }
         }
     }
 }

@@ -20,6 +20,8 @@ private:
     std::vector<Line> lines;
     sf::VertexArray trackMesh;  // NEW: Holds the single global visual track model
 
+    sf::Texture basketballTexture; // NEW: Holds the texture file image buffer
+
     void processEvents() noexcept;
     void update() noexcept;
     void render() noexcept;

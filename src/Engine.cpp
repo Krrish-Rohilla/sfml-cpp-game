@@ -2,7 +2,7 @@
 #include <cmath>
 #include <numbers>
 
-Engine::Engine() : w(1000), h(600), gravity(0.4f), e(1.f), groundFriction(0.f), airFriction(0.f) {
+Engine::Engine() : w(1000), h(600), gravity(0.4f), e(0.8f), groundFriction(0.03f), airFriction(0.001f) {
 sf::VideoMode mymode({w, h});
 sf::ContextSettings settings;
 settings.antiAliasingLevel = 8;
@@ -13,7 +13,22 @@ window.create(mymode, "Skateboard Physics Engine", sf::Style::Close, sf::State::
 window.setFramerateLimit(60);
 
 // Initializing test vector assets 
-balls.push_back(Ball({150,30}, 50.f, sf::Color::Cyan, {0.f, 0.f}));
+balls.push_back(Ball({50, 50}, 50.f, sf::Color::Cyan, {2.5f, 0.f}));
+
+// Inside Engine.cpp Constructor
+if (basketballTexture.loadFromFile("assets/textures/basketball.png"))
+{
+    basketballTexture.setSmooth(true);
+    
+    // FIXED: Wrapped inside an if-statement to handle the nodiscard bool return value
+    if (basketballTexture.generateMipmap())
+    {
+        // Mipmaps allocated in GPU memory successfully!
+    }
+    
+    balls[0].setTexture(basketballTexture);
+}
+
 
 MapGenerator::buildPark(lines);
 
