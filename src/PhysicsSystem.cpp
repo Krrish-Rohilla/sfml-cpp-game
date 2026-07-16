@@ -1,197 +1,365 @@
 #include "PhysicsSystem.hpp"
 #include "VectorMath.hpp"
-#include <algorithm> 
+#include "Spring.hpp"
+#include "SpatialGrid.hpp"
+#include "RigidBody.hpp"
 #include <cmath>
-#include <vector>
+#include <algorithm>
+#include <limits>
 
-void PhysicsSystem::resolveCollisions(std::vector<Ball> &balls, const std::vector<Line> &lines, float e, float groundFriction) noexcept
-{
-    const int substeps = 8;
-    const float dt = 1.f / static_cast<float>(substeps);
-    const float gravityPerSubstep = 0.4f * dt; 
+namespace {
+    [[nodiscard]] std::vector<sf::Vector2f> getTransformWorldVertices(const RigidBody* body) noexcept {
+        std::vector<sf::Vector2f> worldVertices;
+        const auto& localVertices = body->getLocalVertices();
+        worldVertices.reserve(localVertices.size());
 
-    for (int step = 0; step < substeps; ++step)
-    {
-        // ─────────────────────────────────────────────────────────────────────────────
-        // SUBSTEP PASS 1: INTEGRATION
-        // ─────────────────────────────────────────────────────────────────────────────
-        for (Ball &ball : balls)
-        {
-            sf::Vector2f vel = ball.getVelocity();
-            sf::Vector2f pos = ball.getPosition();
-            float omega = ball.getAngularVelocity();
+        const float cosTheta = std::cos(body->getRotationAngle());
+        const float sinTheta = std::sin(body->getRotationAngle());
+        const sf::Vector2f position = body->getPosition();
 
-            vel.y += gravityPerSubstep; 
-            pos += vel * dt;            
-            
-            float angle = ball.getRotationAngle() + (omega * dt);
-
-            ball.setVelocity(vel);
-            ball.setPosition(pos);
-            ball.setRotationAngle(angle);
-        }
-
-        // ─────────────────────────────────────────────────────────────────────────────
-        // SUBSTEP PASS 2: NARROWPHASE WITH GHOST SEAM FILTERING
-        // ─────────────────────────────────────────────────────────────────────────────
-        struct Contact
-        {
-            Ball *ball;
-            const Line *line;
-            sf::Vector2f normal;
-            sf::Vector2f tangent;
-            float penetration;
-            float t;
-        };
-        std::vector<Contact> contactPool;
-
-        for (Ball &ball : balls)
-        {
-            sf::Vector2f ballCenter = ball.getPosition(); 
-            float radius = ball.getRadius();
-
-            struct RawOverlap
-            {
-                const Line *line;
-                sf::Vector2f normal;
-                float penetration;
-                float t;
+        for (const auto& localVert : localVertices) {
+            sf::Vector2f rotatedVert{
+                localVert.x * cosTheta - localVert.y * sinTheta,
+                localVert.x * sinTheta + localVert.y * cosTheta
             };
-            std::vector<RawOverlap> rawOverlaps;
-            bool hasFaceContact = false;
-
-            for (const Line &line : lines)
-            {
-                if (line.isCollisionFree())
-                    continue;
-
-                sf::Vector2f pA = line.getA();
-                sf::Vector2f pB = line.getB();
-                sf::Vector2f lineVec = pB - pA;
-                float lenSq = Math::lengthSq(lineVec);
-                if (lenSq == 0.f)
-                    continue;
-
-                float t = Math::dot(ballCenter - pA, lineVec) / lenSq;
-                float clampedT = std::clamp(t, 0.f, 1.f); 
-                sf::Vector2f closestPoint = pA + clampedT * lineVec;
-
-                sf::Vector2f collisionVec = ballCenter - closestPoint;
-                float distance = Math::length(collisionVec);
-                float targetDistance = radius + (line.getThickness() / 2.f);
-
-                if (distance < targetDistance)
-                {
-                    sf::Vector2f normal = (distance == 0.f) ? line.getNormal() : (collisionVec / distance);
-                    float penetration = targetDistance - distance;
-
-                    rawOverlaps.push_back({&line, normal, penetration, t});
-
-                    if (t > 0.001f && t < 0.999f)
-                    {
-                        hasFaceContact = true;
-                    }
-                }
-            }
-
-            for (const auto &ro : rawOverlaps)
-            {
-                bool isVertex = (ro.t <= 0.001f || ro.t >= 0.999f);
-
-                if (isVertex && hasFaceContact)
-                {
-                    continue; 
-                }
-
-                Contact c;
-                c.ball = &ball;
-                c.line = ro.line;
-                c.normal = ro.normal;
-                c.tangent = sf::Vector2f(-ro.normal.y, ro.normal.x); 
-                c.penetration = ro.penetration;
-                c.t = ro.t;
-                contactPool.push_back(c);
-            }
+            worldVertices.push_back(rotatedVert + position);
         }
+        return worldVertices;
+    }
 
-        // ─────────────────────────────────────────────────────────────────────────────
-        // SUBSTEP PASS 3: CONSTRAINT RESOLUTION
-        // ─────────────────────────────────────────────────────────────────────────────
-        for (int iter = 0; iter < 3; ++iter)
-        {
-            for (Contact &c : contactPool)
-            {
-                sf::Vector2f vel = c.ball->getVelocity();
-                float mass = c.ball->getMass();
-                float radius = c.ball->getRadius();
-                float omega = c.ball->getAngularVelocity();
-
-                // 1. Position Resolution (Baumgarte)
-                sf::Vector2f pos = c.ball->getPosition();
-                pos += c.normal * (c.penetration * 0.4f);
-                c.ball->setPosition(pos);
-
-                // 2. Normal Linear Bounce Solver
-                float velAlongNormal = Math::dot(vel, c.normal);
-                float normalImpulseApplied = 0.f;
-                
-                if (velAlongNormal < 0.f)
-                {
-                    float targetVel = -velAlongNormal * e;
-                    if (std::abs(velAlongNormal) < 0.2f)
-                    {
-                        targetVel = 0.f; 
-                    }
-
-                    normalImpulseApplied = (targetVel - velAlongNormal) * mass;
-                    vel += (normalImpulseApplied / mass) * c.normal;
-                }
-
-                // 3. Decoupled Continuous Surface Friction Calculation
-                float gravityPressingForce = mass * gravityPerSubstep * c.normal.y;
-                float continuousNormalImpulse = (gravityPressingForce < 0.f) ? -gravityPressingForce : 0.f;
-                float totalNormalPressure = normalImpulseApplied + continuousNormalImpulse;
-
-                float velAlongTangent = Math::dot(vel, c.tangent);
-                
-                // FIXED: Sign changed to minus (-) to properly match SFML's clockwise coordinate system.
-                float vRelTangent = velAlongTangent - (omega * radius);
-
-                float effMassTangent = mass / 3.f;
-                float frictionImpulse = -vRelTangent * effMassTangent;
-
-                float maxFriction = groundFriction * totalNormalPressure;
-                
-                // Minimum static grip threshold to allow fast spinning stationary objects to launch
-                if (maxFriction < 0.05f) 
-                {
-                    maxFriction = groundFriction * mass * 0.2f;
-                }
-
-                frictionImpulse = std::clamp(frictionImpulse, -maxFriction, maxFriction);
-
-                // Synchronize impulses into kinematic vectors
-                vel += (frictionImpulse / mass) * c.tangent;
-                
-                // FIXED: Sign changed to minus equals (-=) to properly couple the linear reaction force with torque.
-                omega -= (2.f * frictionImpulse) / (mass * radius);
-
-                // 4. Stabilized Resting Sleep Clamp
-                float linearSpeedSq = (vel.x * vel.x) + (vel.y * vel.y);
-                float rotationalSpeedSq = (omega * radius) * (omega * radius);
-
-                if (linearSpeedSq < 0.04f && rotationalSpeedSq < 0.04f) 
-                {
-                    if (c.normal.y < -0.5f) 
-                    {
-                        vel = sf::Vector2f(0.f, 0.f);
-                        omega = 0.f;
-                    }
-                }
-
-                c.ball->setAngularVelocity(omega);
-                c.ball->setVelocity(vel);
-            }
+    void projectPolygon(const std::vector<sf::Vector2f>& vertices, const sf::Vector2f& axis, float& minProj, float& maxProj) noexcept {
+        minProj = Math::dot(vertices[0], axis);
+        maxProj = minProj;
+        for (size_t i = 1; i < vertices.size(); ++i) {
+            float projection = Math::dot(vertices[i], axis);
+            if (projection < minProj) minProj = projection;
+            if (projection > maxProj) maxProj = projection;
         }
     }
+}
+
+void PhysicsSystem::step(std::vector<std::unique_ptr<RigidBody>>& bodies,
+                         std::vector<std::unique_ptr<Spring>>& springs,
+                         SpatialGrid& grid,
+                         float dt,
+                         float gravity,
+                         float airDrag) noexcept 
+{
+    if (dt <= 0.f) return;
+
+    // Pass 1: Integration Pass - Process linear and rotational motion frameworks
+    integrateForces(bodies, dt, gravity, airDrag);
+
+    // Pass 2: Constraint Pass - Evaluate Hooke's Law spring lattice vectors
+    evaluateConstraints(springs, dt);
+
+    // Pass 3: Broadphase Filter - Map spatial quadrants to filter out far objects
+    std::vector<std::pair<RigidBody*, RigidBody*>> potentialPairs;
+    performBroadphase(bodies, grid, potentialPairs);
+
+    // Pass 4: Narrowphase SAT - Calculate overlapping shapes and exact normals
+    std::vector<ContactManifold> contactPool;
+    performNarrowphase(potentialPairs, contactPool);
+
+    // Post-Pass: Resolves physical impulses, velocity updates, and pushes shapes out of clipping
+    resolveCollisions(contactPool, dt);
+}
+
+void PhysicsSystem::integrateForces(std::vector<std::unique_ptr<RigidBody>>& bodies, float dt, float gravity, float airDrag) noexcept {
+    for (auto& body : bodies) {
+        if (!body || body->getInverseMass() == 0.f) continue; 
+
+        // Apply linear/rotational drag coefficients
+        body->updatePhysics(airDrag);
+
+        // Calculate and integrate gravity acceleration directly to linear velocity
+        sf::Vector2f gravityAccel(0.f, gravity);
+        body->setVelocity(body->getVelocity() + gravityAccel * dt);
+
+        // Integrate velocity to update absolute world coordinates
+        body->setPosition(body->getPosition() + body->getVelocity() * dt);
+
+        // Integrate angular velocity to update orientation angle
+        body->setRotationAngle(body->getRotationAngle() + body->getAngularVelocity() * dt);
+
+        // Flush accumulators to prepare registers for the upcoming frame cycle
+        body->clearForces();
+    }
+}
+
+void PhysicsSystem::evaluateConstraints(std::vector<std::unique_ptr<Spring>>& springs, float dt) noexcept {
+    for (auto& spring : springs) {
+        if (!spring) continue;
+        RigidBody* ba = spring->bodyA;
+        RigidBody* bb = spring->bodyB;
+        if (!ba || !bb) continue;
+
+        sf::Vector2f deltaPos = bb->getPosition() - ba->getPosition();
+        float currentLength = Math::length(deltaPos);
+        if (currentLength < 0.0001f) continue;
+
+        sf::Vector2f normalAxis = deltaPos / currentLength;
+        float displacement = currentLength - spring->restLength;
+
+        sf::Vector2f relativeVel = bb->getVelocity() - ba->getVelocity();
+        float velocityAlongNormal = Math::dot(relativeVel, normalAxis);
+
+        // Hooke's Law compliance equations processing spring and damping bounds
+        float springForceMagnitude = (displacement * spring->stiffness) + (velocityAlongNormal * spring->damping);
+        sf::Vector2f totalImpulse = normalAxis * (springForceMagnitude * dt);
+
+        if (ba->getInverseMass() > 0.f) {
+            ba->setVelocity(ba->getVelocity() + totalImpulse * ba->getInverseMass());
+        }
+        if (bb->getInverseMass() > 0.f) {
+            bb->setVelocity(bb->getVelocity() - totalImpulse * bb->getInverseMass());
+        }
+    }
+}
+
+void PhysicsSystem::performBroadphase(std::vector<std::unique_ptr<RigidBody>>& bodies, 
+                                      SpatialGrid& grid, 
+                                      std::vector<std::pair<RigidBody*, RigidBody*>>& potentialPairs) noexcept 
+{
+    grid.clear();
+    for (auto& body : bodies) {
+        if (body) {
+            grid.insert(body.get());
+        }
+    }
+    grid.queryPotentialPairs(potentialPairs);
+}
+
+void PhysicsSystem::performNarrowphase(std::vector<std::pair<RigidBody*, RigidBody*>>& potentialPairs, 
+                                       std::vector<ContactManifold>& contactPool) noexcept 
+{
+    for (auto& pair : potentialPairs) {
+        RigidBody* a = pair.first;
+        RigidBody* b = pair.second;
+
+        if (!a || !b) continue;
+        if (a->getInverseMass() == 0.f && b->getInverseMass() == 0.f) continue;
+
+        ContactManifold manifold{ a, b, sf::Vector2f(0.f, 0.f), 0.f };
+        bool isColliding = false;
+
+        if (a->getType() == ShapeType::Circle && b->getType() == ShapeType::Circle) {
+            isColliding = testCircleVsCircle(a, b, manifold);
+        } else if (a->getType() == ShapeType::Polygon && b->getType() == ShapeType::Polygon) {
+            isColliding = testPolygonVsPolygon(a, b, manifold);
+        } else if (a->getType() == ShapeType::Circle && b->getType() == ShapeType::Polygon) {
+            isColliding = testCircleVsPolygon(a, b, manifold);
+        } else if (a->getType() == ShapeType::Polygon && b->getType() == ShapeType::Circle) {
+            isColliding = testCircleVsPolygon(b, a, manifold);
+            manifold.normal = -manifold.normal;
+        }
+
+        if (isColliding) {
+            contactPool.push_back(manifold);
+        }
+    }
+}
+
+void PhysicsSystem::resolveCollisions(std::vector<ContactManifold>& contactPool, float dt) noexcept {
+    for (auto& contact : contactPool) {
+        RigidBody* A = contact.bodyA;
+        RigidBody* B = contact.bodyB;
+        if (!A || !B) continue;
+
+        // --- Environmental Trigger Field System Bypasses ---
+        if (A->isTrigger() || B->isTrigger()) {
+            if (A->isTrigger() && B->getInverseMass() > 0.f) {
+                B->setVelocity(B->getVelocity() + A->getVelocity() * dt);
+            }
+            if (B->isTrigger() && A->getInverseMass() > 0.f) {
+                A->setVelocity(A->getVelocity() + B->getVelocity() * dt);
+            }
+            continue; 
+        }
+
+        // --- Solid Body Resolution Physics ---
+        const float inverseMassSum = A->getInverseMass() + B->getInverseMass();
+        if (inverseMassSum == 0.f) continue;
+
+        // 1. Positional Correction Pass (Anti-Sinking Penetration Guard)
+        const float positionalPercent = 0.4f; 
+        const float positionalSlop = 0.01f;   
+        sf::Vector2f nonClippingCorrection = contact.normal * 
+            (std::max(contact.penetrationDepth - positionalSlop, 0.f) / inverseMassSum) * positionalPercent;
+        
+        A->setPosition(A->getPosition() - nonClippingCorrection * A->getInverseMass());
+        B->setPosition(B->getPosition() + nonClippingCorrection * B->getInverseMass());
+
+        // 2. High-Grade Matrix-Free Linear & Angular Impulse Resolutions
+        sf::Vector2f pointContactVectorA = contact.normal * (A->getRadius() - contact.penetrationDepth * 0.5f);
+        sf::Vector2f pointContactVectorB = -contact.normal * (B->getRadius() - contact.penetrationDepth * 0.5f);
+
+        sf::Vector2f contactVelocityA = A->getVelocity() + sf::Vector2f(-A->getAngularVelocity() * pointContactVectorA.y, A->getAngularVelocity() * pointContactVectorA.x);
+        sf::Vector2f contactVelocityB = B->getVelocity() + sf::Vector2f(-B->getAngularVelocity() * pointContactVectorB.y, B->getAngularVelocity() * pointContactVectorB.x);
+        sf::Vector2f relativeVelocity = contactVelocityB - contactVelocityA;
+
+        float relativeNormalVelocity = Math::dot(relativeVelocity, contact.normal);
+        if (relativeNormalVelocity > 0.f) continue; 
+
+        float restitutionCoefficient = std::min(A->getRestitution(), B->getRestitution());
+
+        float crossA = Math::cross(pointContactVectorA, contact.normal);
+        float crossB = Math::cross(pointContactVectorB, contact.normal);
+        float angularMassTerm = (crossA * crossA * A->getInverseInertia()) + (crossB * crossB * B->getInverseInertia());
+
+        float impulseScalar = -(1.f + restitutionCoefficient) * relativeNormalVelocity / (inverseMassSum + angularMassTerm);
+
+        sf::Vector2f normalImpulseVector = contact.normal * impulseScalar;
+        A->setVelocity(A->getVelocity() - normalImpulseVector * A->getInverseMass());
+        B->setVelocity(B->getVelocity() + normalImpulseVector * B->getInverseMass());
+        A->setAngularVelocity(A->getAngularVelocity() - crossA * impulseScalar * A->getInverseInertia());
+        B->setAngularVelocity(B->getAngularVelocity() + crossB * impulseScalar * B->getInverseInertia());
+
+        // 3. Friction Impulse Resolution
+        contactVelocityA = A->getVelocity() + sf::Vector2f(-A->getAngularVelocity() * pointContactVectorA.y, A->getAngularVelocity() * pointContactVectorA.x);
+        contactVelocityB = B->getVelocity() + sf::Vector2f(-B->getAngularVelocity() * pointContactVectorB.y, B->getAngularVelocity() * pointContactVectorB.x);
+        relativeVelocity = contactVelocityB - contactVelocityA;
+
+        sf::Vector2f surfaceTangentAxis = relativeVelocity - contact.normal * Math::dot(relativeVelocity, contact.normal);
+        float tangentMagnitude = Math::length(surfaceTangentAxis);
+
+        if (tangentMagnitude > 0.0001f) {
+            surfaceTangentAxis /= tangentMagnitude;
+
+            float crossTangentA = Math::cross(pointContactVectorA, surfaceTangentAxis);
+            float crossTangentB = Math::cross(pointContactVectorB, surfaceTangentAxis);
+            float frictionAngularTerm = (crossTangentA * crossTangentA * A->getInverseInertia()) + (crossTangentB * crossTangentB * B->getInverseInertia());
+
+            float frictionImpulseScalar = -Math::dot(relativeVelocity, surfaceTangentAxis) / (inverseMassSum + frictionAngularTerm);
+
+            float staticFrictionBlend = std::sqrt(A->getFriction() * B->getFriction());
+            float maximumFrictionLimit = impulseScalar * staticFrictionBlend;
+            frictionImpulseScalar = std::clamp(frictionImpulseScalar, -maximumFrictionLimit, maximumFrictionLimit);
+
+            sf::Vector2f frictionImpulseVector = surfaceTangentAxis * frictionImpulseScalar;
+            A->setVelocity(A->getVelocity() - frictionImpulseVector * A->getInverseMass());
+            B->setVelocity(B->getVelocity() + frictionImpulseVector * B->getInverseMass());
+            A->setAngularVelocity(A->getAngularVelocity() - crossTangentA * frictionImpulseScalar * A->getInverseInertia());
+            B->setAngularVelocity(B->getAngularVelocity() + crossTangentB * frictionImpulseScalar * B->getInverseInertia());
+        }
+    }
+}
+
+bool PhysicsSystem::testCircleVsCircle(RigidBody* a, RigidBody* b, ContactManifold& manifold) noexcept {
+    sf::Vector2f vectorDelta = b->getPosition() - a->getPosition();
+    float totalDistanceSquared = Math::lengthSq(vectorDelta);
+    float targetedRadiusSum = a->getRadius() + b->getRadius();
+
+    if (totalDistanceSquared >= targetedRadiusSum * targetedRadiusSum) return false;
+
+    float totalDistance = std::sqrt(totalDistanceSquared);
+    manifold.normal = (totalDistance != 0.f) ? vectorDelta / totalDistance : sf::Vector2f(0.f, 1.f);
+    manifold.penetrationDepth = targetedRadiusSum - totalDistance;
+    return true;
+}
+
+bool PhysicsSystem::testPolygonVsPolygon(RigidBody* a, RigidBody* b, ContactManifold& manifold) noexcept {
+    std::vector<sf::Vector2f> worldVertsA = getTransformWorldVertices(a);
+    std::vector<sf::Vector2f> worldVertsB = getTransformWorldVertices(b);
+
+    float minimumPenetration = std::numeric_limits<float>::max();
+    sf::Vector2f selectedCollisionAxis(0.f, 0.f);
+
+    auto testAxesGroup = [&](const std::vector<sf::Vector2f>& vertices) noexcept -> bool {
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            sf::Vector2f currentEdge = vertices[(i + 1) % vertices.size()] - vertices[i];
+            sf::Vector2f normalAxis = Math::normalize(Math::Normal(currentEdge));
+
+            float minA, maxA, minB, maxB;
+            projectPolygon(worldVertsA, normalAxis, minA, maxA);
+            projectPolygon(worldVertsB, normalAxis, minB, maxB);
+
+            if (maxA < minB || maxB < minA) return false; 
+
+            float currentOverlap = std::min(maxA, maxB) - std::max(minA, minB);
+            if (currentOverlap < minimumPenetration) {
+                minimumPenetration = currentOverlap;
+                selectedCollisionAxis = normalAxis;
+            }
+        }
+        return true;
+    };
+
+    if (!testAxesGroup(worldVertsA) || !testAxesGroup(worldVertsB)) return false;
+
+    if (Math::dot(selectedCollisionAxis, b->getPosition() - a->getPosition()) < 0.f) {
+        selectedCollisionAxis = -selectedCollisionAxis;
+    }
+
+    manifold.normal = selectedCollisionAxis;
+    manifold.penetrationDepth = minimumPenetration;
+    return true;
+}
+
+bool PhysicsSystem::testCircleVsPolygon(RigidBody* circle, RigidBody* polygon, ContactManifold& manifold) noexcept {
+    std::vector<sf::Vector2f> polygonWorldVerts = getTransformWorldVertices(polygon);
+    sf::Vector2f centerPosition = circle->getPosition();
+
+    float minimumPenetration = std::numeric_limits<float>::max();
+    sf::Vector2f selectedCollisionAxis(0.f, 0.f);
+
+    for (size_t i = 0; i < polygonWorldVerts.size(); ++i) {
+        sf::Vector2f currentEdge = polygonWorldVerts[(i + 1) % polygonWorldVerts.size()] - polygonWorldVerts[i];
+        sf::Vector2f normalAxis = Math::normalize(Math::Normal(currentEdge));
+
+        float minP, maxP;
+        projectPolygon(polygonWorldVerts, normalAxis, minP, maxP);
+
+        float circleCenterProj = Math::dot(centerPosition, normalAxis);
+        float minC = circleCenterProj - circle->getRadius();
+        float maxC = circleCenterProj + circle->getRadius();
+
+        if (maxP < minC || maxC < minP) return false;
+
+        float currentOverlap = std::min(maxP, maxC) - std::max(minP, minC);
+        if (currentOverlap < minimumPenetration) {
+            minimumPenetration = currentOverlap;
+            selectedCollisionAxis = normalAxis;
+        }
+    }
+
+    size_t closestVertexIndex = 0;
+    float closestDistanceSquared = std::numeric_limits<float>::max();
+    for (size_t i = 0; i < polygonWorldVerts.size(); ++i) {
+        float distSq = Math::lengthSq(centerPosition - polygonWorldVerts[i]);
+        if (distSq < closestDistanceSquared) {
+            closestDistanceSquared = distSq;
+            closestVertexIndex = i;
+        }
+    }
+
+    sf::Vector2f circleToVertexAxis = centerPosition - polygonWorldVerts[closestVertexIndex];
+    if (Math::lengthSq(circleToVertexAxis) > 0.0001f) {
+        circleToVertexAxis = Math::normalize(circleToVertexAxis);
+
+        float minP, maxP;
+        projectPolygon(polygonWorldVerts, circleToVertexAxis, minP, maxP);
+
+        float circleCenterProj = Math::dot(centerPosition, circleToVertexAxis);
+        float minC = circleCenterProj - circle->getRadius();
+        float maxC = circleCenterProj + circle->getRadius();
+
+        if (maxP < minC || maxC < minP) return false;
+
+        float currentOverlap = std::min(maxP, maxC) - std::max(minP, minC);
+        if (currentOverlap < minimumPenetration) {
+            minimumPenetration = currentOverlap;
+            selectedCollisionAxis = circleToVertexAxis;
+        }
+    }
+
+    if (Math::dot(selectedCollisionAxis, polygon->getPosition() - centerPosition) < 0.f) {
+        selectedCollisionAxis = -selectedCollisionAxis;
+    }
+
+    manifold.bodyA = circle;
+    manifold.bodyB = polygon;
+    manifold.normal = selectedCollisionAxis;
+    manifold.penetrationDepth = minimumPenetration;
+    return true;
 }
