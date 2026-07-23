@@ -72,12 +72,19 @@ void PhysicsSystem::integrateForces(std::vector<std::unique_ptr<RigidBody>>& bod
         // Apply linear/rotational drag coefficients
         body->updatePhysics(airDrag);
 
-        // Calculate and integrate gravity acceleration directly to linear velocity
+        // Calculate combined linear acceleration: constant gravity field plus
+        // whatever external forces (pushes, wind zones, impulses) were queued
+        // this frame via addForce(). F = ma, so accel = force * inverseMass.
         sf::Vector2f gravityAccel(0.f, gravity);
-        body->setVelocity(body->getVelocity() + gravityAccel * dt);
+        sf::Vector2f appliedAccel = body->getAccumulatedForce() * body->getInverseMass();
+        body->setVelocity(body->getVelocity() + (gravityAccel + appliedAccel) * dt);
 
         // Integrate velocity to update absolute world coordinates
         body->setPosition(body->getPosition() + body->getVelocity() * dt);
+
+        // Angular acceleration from queued torque (addTorque()): alpha = torque * inverseInertia.
+        float appliedAngularAccel = body->getAccumulatedTorque() * body->getInverseInertia();
+        body->setAngularVelocity(body->getAngularVelocity() + appliedAngularAccel * dt);
 
         // Integrate angular velocity to update orientation angle
         body->setRotationAngle(body->getRotationAngle() + body->getAngularVelocity() * dt);
